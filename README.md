@@ -95,7 +95,7 @@ my-project/                   my-project/
 ### 安裝
 
 ```bash
-git clone https://github.com/<your-account>/wrap-up.git
+git clone https://github.com/allenphant/wrap-up.git
 cd wrap-up
 ./install.sh              # 繁體中文版（預設）
 ./install.sh --lang en    # 英文版
@@ -231,7 +231,7 @@ my-project/                   my-project/
 ### Install
 
 ```bash
-git clone https://github.com/<your-account>/wrap-up.git
+git clone https://github.com/allenphant/wrap-up.git
 cd wrap-up
 ./install.sh              # Traditional Chinese (default)
 ./install.sh --lang en    # English
