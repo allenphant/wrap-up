@@ -1,0 +1,50 @@
+{
+  "session_id": "12294f1e-3422-41c6-8621-9fccc14b9b06",
+  "transcript_path": "/home/user/.claude/projects/-home-user-projects-example-app/12294f1e-3422-41c6-8621-9fccc14b9b06.jsonl",
+  "cwd": "/home/user/projects/example-app",
+  "scratchpad_dir": "/tmp/claude-1000/-home-user-projects-example-app/12294f1e-3422-41c6-8621-9fccc14b9b06/scratchpad",
+  "effort": {
+    "level": "medium"
+  },
+  "session_name": "example-session",
+  "model": {
+    "id": "claude-opus-5",
+    "display_name": "Opus 5"
+  },
+  "workspace": {
+    "current_dir": "/home/user/projects/example-app",
+    "project_dir": "/home/user/projects/example-app",
+    "added_dirs": []
+  },
+  "version": "2.1.274",
+  "output_style": {
+    "name": "default"
+  },
+  "cost": {
+    "total_cost_usd": 16.789657749999993,
+    "total_duration_ms": 453532280,
+    "total_api_duration_ms": 1111917,
+    "total_lines_added": 27,
+    "total_lines_removed": 0
+  },
+  "context_window": {
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "context_window_size": 1000000,
+    "current_usage": null,
+    "used_percentage": null,
+    "remaining_percentage": null
+  },
+  "exceeds_200k_tokens": false,
+  "fast_mode": false,
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "seven_day": {
+      "used_percentage": 4,
+      "resets_at": 1790478000
+    }
+  },
+  "_fixture_note": "DERIVED from claude-statusline-2.1.274.json: context_window rewritten to the shape observed live on 2.1.278 right after startup and right after /compact (total_input_tokens 0, used_percentage null)."
+}

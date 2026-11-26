@@ -1,0 +1,1 @@
+{"timestamp":"2026-09-22T15:32:30Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":181044,"cached_input_tokens":178944,"cache_write_input_tokens":0,"output_tokens":132,"reasoning_output_tokens":25,"total_tokens":181176},"model_context_window":258400}}}

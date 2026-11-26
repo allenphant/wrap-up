@@ -14,7 +14,7 @@ A session wrap-up skill shared by Claude Code and Codex: it captures the prefere
 
 對話結束時，有價值的東西通常有兩種：**你講過的偏好**（「以後測試都放 tests/」）和**專案現在的狀態**（做到哪、卡在哪、哪條路走不通）。前者散在對話裡，下一個 session 就忘了；後者只存在你腦中。
 
-`wrap-up` 把這兩件事各自寫成一個檔案，並且解決一個常被忽略的問題：**Claude Code 只讀 `CLAUDE.md`，Codex 只讀 `AGENTS.md`**。兩邊各寫一份必然走樣，所以這個技能採用單一真相來源 + 指標檔：
+`wrap-up` 把這兩件事各自寫成一個檔案，並且解決一個常被忽略的問題：**Claude Code 與 Codex 各有自己的記憶檔（`CLAUDE.md`、`AGENTS.md`）**。兩邊各寫一份必然走樣，所以這個技能採用單一真相來源 + 指標檔：
 
 ```
 AGENTS.md      ← 唯一真相來源，所有規則都在這
@@ -23,7 +23,7 @@ CLAUDE.md      ← 只有一行 "@AGENTS.md"，把 Claude 導向上面那份
 
 Claude Code 讀 `CLAUDE.md`，看到 `@AGENTS.md` 就展開匯入；Codex 直接讀 `AGENTS.md`。兩邊拿到同一份規則，專案在兩個工具間切換不需要任何手動動作。
 
-> 這是實測結論，不是推論。Claude Code 2.1.252 在只有 `AGENTS.md` 的目錄裡讀不到內容（canary 測試回答 UNKNOWN），加上一行 `@AGENTS.md` 的 `CLAUDE.md` 後即讀得到。Codex 側實測於 codex-cli 0.152.1。子目錄的巢狀記憶檔同樣適用。
+> 這是實測結論，不是推論。實測於 Claude Code 2.1.278：只有 `AGENTS.md` 時讀得到；但只要另有一份沒有匯入它的 `CLAUDE.md`，`AGENTS.md` 就會被忽略。放一行 `@AGENTS.md` 的指標檔可避免這個情況（2.1.252 上只有 `AGENTS.md` 時讀不到，指標檔同樣解決）。Codex 側實測於 codex-cli 0.152.1。子目錄的巢狀記憶檔同樣適用。
 
 ### 執行流程：兩個階段
 
@@ -41,8 +41,8 @@ Claude Code 讀 `CLAUDE.md`，看到 `@AGENTS.md` 就展開匯入；Codex 直接
        │
        ├─ 沒有任何發現 ──────────────► 直接給第一句話（結束）
        │
-       ▼  停下來等你回覆
-┌─ 階段二（你回覆之後）────────────────────────┐
+       ▼  同一輪跳出核准選單，你勾選
+┌─ 階段二（選單回答之後）──────────────────────┐
 │  6. 只套用你核准的項目                        │
 │  7. 回讀驗證                                  │
 │  8. 給下一個 session 的第一句話               │
@@ -165,6 +165,7 @@ git clone https://github.com/allenphant/wrap-up.git
 cd wrap-up
 ./install.sh              # 繁體中文版（預設）
 ./install.sh --lang en    # 英文版
+./install.sh --hooks      # 另外安裝 Claude Code 與 Codex 的 70% context hook
 ```
 
 `install.sh` 會建立 symlink 指向 repo 內的 skill 目錄：
@@ -184,6 +185,53 @@ cd wrap-up
 > cp -r skills/zh-TW/wrap-up ~/.codex/skills/
 > ```
 
+### 70% context hook：自動要求 wrap-up
+
+要讓 Claude Code 與 Codex 在 context 使用量達到 70% 時自動要求執行 wrap-up，加上 `--hooks`（只裝一邊用 `--claude-hook` 或 `--codex-hook`）：
+
+```bash
+./install.sh --hooks
+```
+
+兩邊的語意相同：預設閾值 70%（環境變數 `WRAP_UP_CONTEXT_THRESHOLD` 可改）、每個 context window 只觸發一次、compact 之後重置、任何錯誤（壞 JSON、缺欄位、檔案不存在、例外）一律放行。觸發時 hook 在 `Stop` 事件回 `decision: block`，讓模型在這一輪結束前先跑 wrap-up。每次呼叫都會在 `~/.local/state/wrap-up/context-hook.log` 留下一行只含 metadata 的診斷紀錄（不記 prompt、不記訊息內容），方便分辨「hook 沒被呼叫」和「被呼叫但條件不符」。
+
+**Codex**：`Stop` 事件讀取 transcript 尾端最新的 `token_count`，計算 `input_tokens / model_context_window`。安裝後在 Codex 執行 `/hooks`，審核並信任這個 hook。
+
+**Claude Code**：hook 輸入本身沒有 context 用量（實測於 2.1.278，對照 binary 內的 hook schema：共同欄位只有 `session_id`、`transcript_path`、`cwd`、`prompt_id`、`permission_mode`、`agent_id`、`agent_type`、`effort`），transcript 也沒有 context window 大小。官方唯一有 context 百分比的結構化資料是送進 `statusLine.command` 的 JSON（`context_window`：`context_window_size` 與 `total_input_tokens = input + cache_creation + cache_read`，`used_percentage` 就是兩者相除）。安裝器因此把 statusLine 包一層 relay，並掛三個 hook：
+
+```
+Claude Code ──statusLine JSON────► claude-statusline-relay.py
+                                     │  1. 寫 ~/.local/state/wrap-up/claude-context-<session>.json
+                                     │     （只存 session_id、版本、模型、context_window）
+                                     └─ 2. 原封轉交給你原本的 statusLine 指令，畫面不變
+Claude Code ──UserPromptSubmit────► claude-context-wrap-up.py
+                                     │  快照此時是新的：≥ 70% 且未觸發過 → additionalContext
+                                     │  「先跑 /wrap-up 再處理這個 prompt」
+Claude Code ──Stop────────────────► claude-context-wrap-up.py
+                                     │  取快照與 transcript 尾端 assistant usage 的較大值：
+                                     │  ≥ 70% 且未觸發過 → decision: block，這一輪結束前先 wrap-up
+Claude Code ──SessionStart(compact)► 清掉觸發狀態與舊快照，下一個 window 可再觸發
+```
+
+為什麼要兩個事件：實測於 2.1.278，`Stop` 觸發時 statusLine 快照與 transcript 都還停在**上一輪**（快照在 Stop 之後 10–50 秒才更新；transcript 的 assistant 記錄在 Stop hook 跑完之後才落盤）。所以 `Stop` 只在「回合中途已經跨過閾值」（例如一個很長的工具呼叫回合）時能立刻攔下；剩下的情況由下一次 `UserPromptSubmit` 補上，那時兩個來源都是新的。兩個事件共用同一份觸發狀態，只會有一個發聲。
+
+`~/.claude/settings.json` 修改前會先備份成 `settings.json.bak-wrap-up-<時間>`，用暫存檔＋rename 原子寫入，既有的 hooks 與其他設定全部保留，重跑安裝不會重複加入。原本的 `statusLine` 物件存在 `~/.local/state/wrap-up/claude-statusline-upstream.json`；要移除時執行：
+
+```bash
+python3 hooks/install_claude_hook.py --uninstall \
+  --hook hooks/claude-context-wrap-up.py --relay hooks/claude-statusline-relay.py
+```
+
+安裝後不需要重啟：實測於 2.1.278，正在執行的 session 會自動重新讀取 `settings.json`（安裝後一分鐘內，既有 session 的 `Stop` 就已經呼叫這個 hook、狀態列也已經走 relay）。若你的版本沒有這樣做，重啟 session 或用 `/hooks` 重新載入即可。
+
+Claude 側的限制，寫清楚：
+
+* 只在有 statusLine 的互動式 TUI 才會運作；`claude -p` 不跑 statusLine，永遠不會觸發。
+* 最壞情況晚一輪：一個回合把用量從 69% 推到 75%，`Stop` 看到的還是 69%，要等你送下一個 prompt 時 `UserPromptSubmit` 才要求 wrap-up（在處理你的 prompt 之前）。
+* 必須包住你既有的 statusLine 指令。沒有 statusLine 的話 relay 會印一行最簡狀態列 `[模型] · ctx N%`。
+* `Stop` 的 `decision: block` 會受 Claude Code 的 block 上限保護（`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`）；hook 也會檢查 `stop_hook_active`，續作那一輪不會再 block。`UserPromptSubmit` 只注入 context，不會擋掉你的 prompt。
+* 只能宣稱「實測於 Claude Code 2.1.278 有此行為」（fixture 裡的 statusLine JSON 側錄自 2.1.274）。
+
 ### 使用
 
 在 Claude Code 或 Codex 裡輸入：
@@ -192,7 +240,7 @@ cd wrap-up
 /wrap-up
 ```
 
-或直接說「幫我 wrap-up」「收尾一下」「做個狀態快照」。看到封存清單後，回覆哪幾項可以動（或「都不用改」），就會拿到下一個 session 的第一句話。
+或直接說「幫我 wrap-up」「收尾一下」「做個狀態快照」。清單列出變更前後內容，接著跳出選單讓你勾選要套用的項目（可全部不核准），之後就會拿到下一個 session 的第一句話。
 
 ### 測試
 
@@ -202,7 +250,14 @@ symlink 防護、「搬移不做價值判斷」、「階段一只增不刪」這
 ./tests/selftest.sh
 ```
 
-五條測試，其中兩條會用 `--session-id` / `--resume` 跑真正的兩回合對話，驗證階段切分。測試全程在暫存目錄操作，不會碰到任何真實專案。
+六條測試：一條是不呼叫模型的靜態檢查（中英文 `SKILL.md` 都保有核准選單規則），其中兩條會用 `--session-id` / `--resume` 跑真正的兩回合對話，驗證階段切分。測試全程在暫存目錄操作，不會碰到任何真實專案。
+
+context hook 的可執行自測（fixture 取自真實側錄的 payload（路徑與名稱已換成示意值），不是手寫的）：
+
+```bash
+python3 tests/test_context_hook.py          # Codex：首次觸發、重複不觸發、compact 後再觸發、錯誤輸入放行、安裝 idempotent
+python3 tests/test_claude_context_hook.py   # Claude Code：同上，另加 relay 轉交、他 session 不觸發、settings.json 備份／保留／還原
+```
 
 ### 授權
 
@@ -216,7 +271,7 @@ MIT
 
 When a session ends, two kinds of value are usually left on the floor: **the preferences you stated** ("put tests in tests/ from now on") and **where the project actually stands** (what's done, what's blocked, which approach turned out to be a dead end). The first is scattered through the conversation and gone by the next session; the second only exists in your head.
 
-`wrap-up` writes each into its own file, and solves a problem that often goes unnoticed: **Claude Code only reads `CLAUDE.md`, Codex only reads `AGENTS.md`**. Maintaining one of each guarantees drift, so this skill uses a single source of truth plus a pointer:
+`wrap-up` writes each into its own file, and solves a problem that often goes unnoticed: **Claude Code and Codex each have their own memory file (`CLAUDE.md`, `AGENTS.md`)**. Maintaining one of each guarantees drift, so this skill uses a single source of truth plus a pointer:
 
 ```
 AGENTS.md      ← single source of truth; every rule lives here
@@ -225,7 +280,7 @@ CLAUDE.md      ← one line, "@AGENTS.md", redirecting Claude to the file above
 
 Claude Code reads `CLAUDE.md`, sees `@AGENTS.md` and expands the import; Codex reads `AGENTS.md` directly. Both get the same ruleset, and switching a project between the two tools needs no manual step.
 
-> This is measured, not assumed. On Claude Code 2.1.252, a directory containing only `AGENTS.md` yields nothing (a canary test answers UNKNOWN); adding a `CLAUDE.md` holding the single line `@AGENTS.md` makes it readable. The Codex side was verified on codex-cli 0.152.1. Nested memory files in subdirectories behave the same way.
+> This is measured, not assumed. On Claude Code 2.1.278, a lone `AGENTS.md` is read, but as soon as a `CLAUDE.md` that does not import it exists, `AGENTS.md` is ignored. A pointer `CLAUDE.md` holding the single line `@AGENTS.md` prevents that (it also covers 2.1.252, where a lone `AGENTS.md` was not read). The Codex side was verified on codex-cli 0.152.1. Nested memory files in subdirectories behave the same way.
 
 ### How a run is structured: two phases
 
@@ -243,8 +298,8 @@ you type /wrap-up
        │
        ├─ nothing found ───────────► opening line right away (done)
        │
-       ▼  stop and wait for your reply
-┌─ Phase 2 (after you reply) ──────────────────┐
+       ▼  approval menu in the same turn; you tick items
+┌─ Phase 2 (after the menu is answered) ───────┐
 │  6. apply only what you approved             │
 │  7. read back and verify                     │
 │  8. give the opening line for next session   │
@@ -367,6 +422,7 @@ git clone https://github.com/allenphant/wrap-up.git
 cd wrap-up
 ./install.sh              # Traditional Chinese (default)
 ./install.sh --lang en    # English
+./install.sh --hooks      # Also install the Claude Code and Codex 70% context hooks
 ```
 
 `install.sh` creates symlinks pointing at the skill directory inside the repo:
@@ -386,6 +442,53 @@ Both tools then share one file, and a `git pull` updates both at once — no cha
 > cp -r skills/en/wrap-up ~/.codex/skills/
 > ```
 
+### The 70% context hook: automatic wrap-up requests
+
+To have Claude Code and Codex automatically request a wrap-up when context usage reaches 70%, add `--hooks` (or `--claude-hook` / `--codex-hook` for one side only):
+
+```bash
+./install.sh --hooks
+```
+
+Both sides share the same semantics: 70% threshold by default (override with `WRAP_UP_CONTEXT_THRESHOLD`), at most one trigger per context window, reset after compaction, and fail-open on every error (bad JSON, missing fields, missing files, exceptions). When it fires, the hook answers the `Stop` event with `decision: block` so the model runs wrap-up before the turn ends. Every invocation appends one metadata-only line to `~/.local/state/wrap-up/context-hook.log` (no prompt or message text), so "the hook was never called" and "it was called but the condition didn't match" are distinguishable.
+
+**Codex**: the `Stop` hook reads the latest `token_count` from the tail of the transcript and computes `input_tokens / model_context_window`. After installation, run `/hooks` in Codex to review and trust the hook.
+
+**Claude Code**: hook input carries no context usage (verified on 2.1.278 against the hook schema inside the binary: the common fields are `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`, `agent_id`, `agent_type` and `effort`), and the transcript never records the context window size. The only official structured source is the JSON Claude Code pipes into `statusLine.command` (`context_window`: `context_window_size` and `total_input_tokens = input + cache_creation + cache_read`; `used_percentage` is their ratio). The installer therefore wraps the status line with a relay and registers three hooks:
+
+```
+Claude Code ──statusLine JSON────► claude-statusline-relay.py
+                                     │  1. writes ~/.local/state/wrap-up/claude-context-<session>.json
+                                     │     (session_id, version, model and context_window only)
+                                     └─ 2. forwards the untouched payload to your previous statusLine command
+Claude Code ──UserPromptSubmit────► claude-context-wrap-up.py
+                                     │  snapshot is fresh here: ≥ 70% and not yet fired → additionalContext
+                                     │  "run /wrap-up before working on this prompt"
+Claude Code ──Stop────────────────► claude-context-wrap-up.py
+                                     │  max(snapshot, latest assistant usage in the transcript tail):
+                                     │  ≥ 70% and not yet fired → decision: block, wrap-up before the turn ends
+Claude Code ──SessionStart(compact)► clears the trigger state and the stale snapshot for the next window
+```
+
+Why two events: measured on 2.1.278, when `Stop` fires both the statusLine snapshot and the transcript still describe the **previous** turn (the snapshot refreshes 10–50 s after Stop; the assistant record is flushed to the transcript after the Stop hooks finish). So `Stop` can only intercept immediately when the threshold was crossed mid-turn (e.g. a long tool-calling turn); every other case is caught by the next `UserPromptSubmit`, when both sources are current. The two events share one trigger state, so only one of them speaks.
+
+`~/.claude/settings.json` is backed up to `settings.json.bak-wrap-up-<stamp>` first, written atomically via temp file + rename, and every existing hook and setting is preserved; re-running the installer adds nothing twice. The previous `statusLine` object is stored in `~/.local/state/wrap-up/claude-statusline-upstream.json`. To remove:
+
+```bash
+python3 hooks/install_claude_hook.py --uninstall \
+  --hook hooks/claude-context-wrap-up.py --relay hooks/claude-statusline-relay.py
+```
+
+No restart is needed: measured on 2.1.278, running sessions re-read `settings.json` on their own (within a minute of installing, an existing session's `Stop` had already called this hook and its status line was already going through the relay). If your version does not, restart the session or reload with `/hooks`.
+
+Claude-side limitations, stated plainly:
+
+* Only interactive TUI sessions with a status line are covered; `claude -p` never renders the status line, so it never triggers.
+* Worst case is one turn late: if a turn pushes usage from 69% to 75%, `Stop` still sees 69%, and the wrap-up request arrives with your next prompt via `UserPromptSubmit` (before that prompt is handled).
+* Your existing statusLine command must be wrapped. Without one, the relay prints a minimal `[model] · ctx N%` line.
+* The `Stop` block is bounded by Claude Code's block cap (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`); the hook also honours `stop_hook_active`, so the continuation turn is never blocked again. `UserPromptSubmit` only injects context and never blocks your prompt.
+* Verified on Claude Code 2.1.278 only (the statusLine JSON fixture was captured on 2.1.274).
+
 ### Usage
 
 In Claude Code or Codex:
@@ -394,7 +497,7 @@ In Claude Code or Codex:
 /wrap-up
 ```
 
-Or just say "wrap up", "close this out", "take a state snapshot". When the archive list comes back, reply with which items to act on (or "leave it all") and you get the opening line for the next session.
+Or just say "wrap up", "close this out", "take a state snapshot". The list shows each change as before/after, then a menu lets you tick which items to apply (or none), and you get the opening line for the next session.
 
 ### Tests
 
@@ -404,7 +507,14 @@ The symlink guard, the no-filtering rule and the append-only phase boundary are 
 ./tests/selftest.sh
 ```
 
-Five tests; two of them drive a real two-turn conversation with `--session-id` / `--resume` to verify the phase boundary. Everything runs in temporary directories; no real project is touched.
+Six tests: one is a static check that calls no model (both `SKILL.md` files keep the approval-menu rules), and two of the others drive a real two-turn conversation with `--session-id` / `--resume` to verify the phase boundary. Everything runs in temporary directories; no real project is touched.
+
+Executable self-tests for the context hooks (fixtures come from real captured payloads (paths and names replaced with placeholders), not hand-written):
+
+```bash
+python3 tests/test_context_hook.py          # Codex: first trigger, no repeat, re-trigger after compact, bad input passes, idempotent install
+python3 tests/test_claude_context_hook.py   # Claude Code: the same, plus relay forwarding, foreign-session isolation, settings.json backup/preserve/restore
+```
 
 ### License
 

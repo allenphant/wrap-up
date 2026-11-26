@@ -8,11 +8,16 @@
 set -euo pipefail
 
 LANG_DIR="zh-TW"
+INSTALL_CODEX_HOOK=0
+INSTALL_CLAUDE_HOOK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --lang) LANG_DIR="${2:-}"; shift 2 ;;
     --lang=*) LANG_DIR="${1#*=}"; shift ;;
-    -h|--help) echo "usage: $0 [--lang zh-TW|en]"; exit 0 ;;
+    --hooks) INSTALL_CODEX_HOOK=1; INSTALL_CLAUDE_HOOK=1; shift ;;
+    --codex-hook) INSTALL_CODEX_HOOK=1; shift ;;
+    --claude-hook) INSTALL_CLAUDE_HOOK=1; shift ;;
+    -h|--help) echo "usage: $0 [--lang zh-TW|en] [--hooks | --codex-hook | --claude-hook]"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -45,6 +50,31 @@ for target in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
 done
 
 [ "$installed" -gt 0 ] || { echo "沒有偵測到 Claude Code 或 Codex 的 skills 目錄。" >&2; exit 1; }
+
+if [ "$INSTALL_CODEX_HOOK" -eq 1 ] && [ -d "${CODEX_HOME:-$HOME/.codex}" ]; then
+  python3 "$REPO/hooks/install_codex_hook.py" \
+    --hook "$REPO/hooks/codex-context-wrap-up.py"
+fi
+
+# Claude Code 的 hook 輸入沒有 context 用量，所以同時把 statusLine 包一層 relay
+# 來記錄官方的 context_window 數字。原本的 statusLine 指令會被保留並繼續執行。
+# Claude Code hook input has no context usage, so the statusLine is wrapped by a
+# relay that records the official context_window numbers. The previous statusLine
+# command is kept and still runs.
+if [ "$INSTALL_CLAUDE_HOOK" -eq 1 ] && [ -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" ]; then
+  python3 "$REPO/hooks/install_claude_hook.py" \
+    --hook "$REPO/hooks/claude-context-wrap-up.py" \
+    --relay "$REPO/hooks/claude-statusline-relay.py"
+fi
+
 echo
 echo "完成。在 Claude Code 或 Codex 輸入 /wrap-up 即可使用。"
 echo "Done. Type /wrap-up in Claude Code or Codex."
+if [ "$INSTALL_CODEX_HOOK" -eq 1 ]; then
+  echo "Codex context hook: 70% threshold, reset after compact."
+  echo "Review and trust it once with /hooks in Codex."
+fi
+if [ "$INSTALL_CLAUDE_HOOK" -eq 1 ]; then
+  echo "Claude Code context hook: 70% threshold, reset after compact."
+  echo "Running Claude Code sessions pick up the new hooks and statusLine on their own (verified on 2.1.278); otherwise restart or use /hooks."
+fi

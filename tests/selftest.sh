@@ -131,6 +131,11 @@ t_phase2_archive_file() {
     || { echo "  核心檔案被搬走了"; return 1; }
 }
 
+# ── T0：靜態檢查（不呼叫模型）：中英文 SKILL.md 都保有「同一輪核准選單」與「變更前／後」規則
+SELFTEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+t_static_menu() { python3 -I "$SELFTEST_DIR/test_skill_approval_menu.py"; }
+
+run "SKILL.md 保有核准選單與變更前後規則（靜態）" t_static_menu
 run "symlink 不可被寫入"                t_symlink
 run "多餘內容原封搬移、不可篩選"        t_no_filter
 run "階段一只增不刪、不給第一句話、狀態仍落地" t_phase1_boundary

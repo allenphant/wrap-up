@@ -1,161 +1,132 @@
 ---
 name: wrap-up
-description: Triggers when the user asks to wrap up, close out a session, take a state snapshot, or prepare a handover. Enforces project state updates, preference capture, and archiving of stale content.
----
-You have been triggered by the `wrap-up` skill.
-
-This skill runs in two phases. **Phase 1 needs no confirmation — do all of it directly.** Phase 2 runs only after I reply.
-
-**"Project root" in this skill means**: the directory containing the `AGENTS.md` / `CLAUDE.md` actually loaded for this session. If neither exists, use the current working directory. Do not create these files in a parent directory or anywhere else.
-
-**Archive location**: `docs/wrap-up/` under the project root (create it if missing).
-
+description: When the user or a conversation hook explicitly asks to wrap up, close out, save a state snapshot, or hand over, update the project state, append new preferences, and propose an evidence-backed archive list. Merely asking about or consulting this skill's design does not trigger a wrap-up.
 ---
 
-# Phase 1: write immediately, then propose a review list
+# Wrap-up
 
-Do 1-1 through 1-4 without asking me anything. After 1-5, stop and wait for my reply.
+Maintain two default entry points: `AGENTS.md` holds long-lived rules and the entry points to task documents, `CURRENT_STATE.md` holds the latest handover. `CLAUDE.md` is only a compatibility pointer. Existing project specs are read as the task requires; do not add another state or decision document by default.
 
-## 1-1 Update project preferences (AGENTS.md)
+Two phases: Phase 1 saves directly; Phase 2 only handles the rule consolidation and document archiving the user approved. Do not ask again for something already explicitly authorized. Other work may continue; unapproved edits and removals stay pending.
 
-Review this conversation. If I (the user) stated any new "general development preference, code style requirement, or specific habit" (e.g. a required library, a particular way of writing something), **append** those rules to `AGENTS.md` in the project root.
+## Location and boundaries
 
-* Create `AGENTS.md` if it does not exist.
-* **⚠️ This phase may only add. Never delete or rewrite existing content here.** Every removal or edit waits for Phase 2, after I approve it.
-* After writing, **read back the tail of the file** to confirm the content actually landed. "The command did not error" is not proof.
-* If this conversation produced no new preferences, skip the write — but still do everything from 1-2 onward.
+- The project root is the directory of the project-level `AGENTS.md` / `CLAUDE.md` loaded for this session; if neither exists, the current working directory. Inheriting instructions from a parent directory does not move project state up there.
+- History lives under `docs/wrap-up/` in the root. Archived files are never a source of current rules or state.
+- Keep the project's limits on data, secrets, and operations. Saving and handing over do not widen access, and sensitive values are never written into rules or snapshots.
 
-## 1-2 Pointer-file maintenance (check every time)
+## Phase 1: save directly, then propose a review list
 
-`AGENTS.md` is the single source of truth. However, Claude Code only reads `CLAUDE.md` and does **not** discover `AGENTS.md` automatically (verified on Claude Code 2.1.252). The project root therefore needs a `CLAUDE.md` whose content is **only** this single line:
+### 1. Append new preferences
 
-```
-@AGENTS.md
-```
+Read `AGENTS.md` first and append only long-lived preferences that the user actually added in this conversation and that are not recorded yet; if there are none, skip the write. Create the file if missing.
 
-(Tools that read `AGENTS.md` natively, such as Codex, do not need this file. It exists purely for Claude Code compatibility and is harmless to everything else.)
+In this phase, do not rewrite, delete, or consolidate existing rules. Do not add execution logs, temporary blockers, the status of business topics, or preferences the agent inferred on its own. Read back after writing.
 
-Work through these in order:
+### 2. Maintain the compatibility pointer
 
-1. **Check for symlinks first.** Use `ls -la` or `stat` to determine whether `CLAUDE.md` or `AGENTS.md` is a symlink.
-   If either one is, **`rm` the symlink itself first** (removing a link does not touch its target), then write the intended content as a regular file.
-   **Never write through a symlink** — writing to the link writes to its target, which would overwrite the entire ruleset with a single line and turn it into a self-referencing import.
-2. `CLAUDE.md` does not exist → create it containing that single line.
-3. `CLAUDE.md` exists but holds more than that line (overwritten by `/init`, or appended to by another agent) →
-   **first append everything extra to `AGENTS.md` verbatim, word for word**, read back to confirm the move completed, and only then overwrite `CLAUDE.md` with that single line.
-   **Do not decide for yourself which parts are "worth keeping" and drop the rest** — a wrong call silently deletes rules someone else wrote.
-4. **Never write the rules themselves into `CLAUDE.md`** — that creates a second copy that will drift.
+`AGENTS.md` is the source of project rules; the entire content of `CLAUDE.md` is `@AGENTS.md` plus a newline.
 
-## 1-3 Archive the previous state snapshot
+1. First check whether either file is a symlink, and never write through a link. When one must become a regular file, safely read and preserve its content, remove the link itself, and create a regular file with the same content; never change the link target. If the target cannot be read or lies outside the allowed access scope, stop the operations that depend on it and report.
+2. If `CLAUDE.md` does not exist, create the one-line pointer.
+3. If it holds anything else, first append everything outside the pointer verbatim to `AGENTS.md`, without filtering out any rule; read back to confirm it was fully saved, then turn `CLAUDE.md` into the one-line pointer. If only the trailing newline is missing, just add it.
+4. Read back to confirm both are regular files, no rule was lost, and the pointer is correct.
 
-If `CURRENT_STATE.md` already exists, **copy it to** `docs/wrap-up/states/YYYY-MM-DD-HHMM.md` first (use the timestamp recorded inside that file; fall back to its mtime).
+### 3. Save the previous state
 
-This step **needs no approval** — it preserves, it does not delete. Without it, the next step's overwrite throws the history away.
+Before overwriting, read `CURRENT_STATE.md` completely and, if it exists, copy it byte for byte to `docs/wrap-up/states/YYYY-MM-DD-HHMM.md`, using the file's recorded update time, or its mtime if there is none.
 
-## 1-4 Update the project state snapshot (CURRENT_STATE.md)
+If a snapshot with that name exists with identical content, reuse it; if the content differs, save under a numbered suffix and never overwrite an existing snapshot. Read back and compare before updating the root state. If the snapshot fails, do not overwrite. If the state file is a symlink, first follow the safe preserve-and-convert procedure above.
 
-Update (or create) `CURRENT_STATE.md` in the project root, **overwriting** it so the project keeps exactly one current-state document.
+### 4. Distill the latest state
 
-**Read the existing content first.** If a section saw no progress in this conversation (no failed attempts this time, no new decisions), **carry forward the previous version's content for that section**. Do not write "none" or drop it — otherwise one short conversation erases context accumulated over weeks.
+Keep the facts that still hold; the old wording does not have to be reused. Unresolved items with no progress this time must still be kept — never write "none" or silently drop them; completed history is carried by the snapshot.
 
-Use this Markdown structure strictly, and keep it distilled:
+Use the six sections below with these names and this order, preceded by a one-line status title, the update time, and a one-line project core:
 
-# [One-line summary: what is being worked on + current status (done / in progress / blocked), written like a git commit message]
+| Section | What to keep |
+| --- | --- |
+| Goal of this session | The latest working goal; if the user only adds detail or asks questions, keep the original goal. |
+| Completed | A few results relevant to the current work and where the evidence is; no turn-by-turn change log. |
+| In Progress & Blockers | Every unresolved item; compress old side threads to one sentence each, keeping status, the condition to resume or finish, and the evidence entry point. |
+| Failed Approaches | Problems that can still recur, why, and how to avoid them. |
+| Key Decisions | Summaries of the decisions later work must know, with sources where needed. |
+| Handover Context | The first step for whoever takes over, the success criteria, and which documents to read for which task. |
+
+You may use this skeleton directly, without any explanatory text in brackets:
+
+```markdown
+# [Current work and status]
 
 > **Updated**: YYYY-MM-DD HH:MM
-> **Project core**: one line on the project's goal and main tech stack
+> **Project core**: [goal and main technology]
 
 ## Goal of this session
 
-(What this conversation set out to accomplish)
-
 ## Completed
-
-* **[Task]**: (summary of the key changes)
-  * `path/to/changed/file1`
-  * `path/to/changed/file2`
 
 ## In Progress & Blockers
 
-* **Current progress**: (how far it got)
-* **Next step**: (what comes next)
-* **Blocker**: (what is stuck and why; write "none" if nothing)
-
 ## Failed Approaches
-
-* **What was tried**: (the concrete approach)
-  * **Why it failed**: (the error or the logical flaw)
-  * **Lesson**: (never go down this road again)
 
 ## Key Decisions
 
-* **[Decision]**: (what was decided, e.g. database choice, architecture)
-  * **Rationale**: (why)
-  * **Rejected alternatives**: (what was not chosen)
-
 ## Handover Context
+```
 
-(Written for the next AI entity with zero prior context. Include the current technical picture, and the first command you strongly recommend it run — or the first file it should read.)
+**Soft character budget: 1,500–2,500 Chinese characters' worth of content; for an English state file use about 3,000–5,000.** Count Unicode code points of the fully decoded UTF-8 text, e.g. Python `len(text)`, including headings, punctuation, spaces, newlines, Markdown, and paths — not bytes or tokens. There is no minimum to pad up to.
 
-## 1-5 Produce the review list (list only — change nothing)
+When over budget, first remove repetition and historical detail, merge similar side threads, and cite existing evidence. Do not truncate, or drop unresolved items, safety conditions, or decisions needed for handover, to meet the number; if it is still over, keep what is necessary and say why. Do not create parallel state files to save characters.
 
-Examine two classes of target. **In this phase you may not edit a single word or move a single file.**
+Detailed logs stay in run artifacts. The state keeps only conclusions, their scope, and evidence entry points; distinguish "decided", "implemented", and "verified", and never present partial verification as complete.
 
-### Class A: rules inside `AGENTS.md`
+After writing, read back and check: the order of the six sections, the actual character count, where every unresolved item of the previous version went, the required decisions and safety conditions, and the evidence entry points added this time. An item leaves the unresolved list only when the conversation or evidence supports that it was completed, cancelled, or superseded. If a needed document is missing, record that; do not substitute a historical archive.
 
-1. **Duplication** — the same rule stated more than once in different words, or several headings covering the same ground.
-2. **Contradiction** — two rules that conflict (one says "always use X", another says "never use X").
-3. **Staleness** — a rule referring to a file, command, tool, or version that no longer exists or has been superseded.
+### 5. Propose an evidence-backed review list
 
-### Class B: stale documents and data files in the project
+Check only what relates to this work; do not read the whole project history just to build a list. This step only reports: change no rules, move no documents.
 
-**Only report something when you have concrete evidence.** It must meet one of these:
+- **Class A, rules**: duplication, contradiction, or evidenced staleness in `AGENTS.md`.
+- **Class B, documents**: the conversation explicitly confirmed it is obsolete, superseded, or unmaintained; or an actual search found no references and the file has a historical name or a clear successor. Searches follow the project's tool priority (`rg` is fine for non-code files). State the search scope and exclusions; "no references found" alone is not evidence of staleness.
+- Never report the three core files in the root or the historical evidence under `docs/wrap-up/`, and a `legacy` name alone does not mean unused.
 
-* This conversation explicitly said it is obsolete, superseded, or no longer maintained; or
-* Nothing in the repository references it (confirm with `grep -rl <filename>`), **and** its name carries a date, `old`, `legacy`, `deprecated`, `backup`, `_bak`, `archive`, or an obvious successor version exists.
+For each item give an ID, line numbers or relative path, class, concrete evidence, and reason, and show **Before / After** so the user never has to guess what approving does. Reference counts must come from an actual search.
 
-**Do not pad the list**, and do not report things you merely suspect are unused. Under-reporting beats over-reporting.
+- **Class A**:
+  - Before: quote the exact text to be changed with its `AGENTS.md` line numbers; for a duplication or contradiction, quote the other rule too, with line numbers.
+  - After: the full consolidated or corrected wording; for a removal, "removed; original moved verbatim to `docs/wrap-up/ARCHIVE.md`".
+  - Effect: one sentence on whether the meaning of the rule changes (e.g. "wording merged only, scope unchanged").
+- **Class B**:
+  - Before: the current path, plus the reference search scope and result (`references in repo: N`, listing the matching files).
+  - After: the archive path `docs/wrap-up/files/<original relative path>`; if references must be fixed, list "which file, which line, changed to what".
+  - Restore: one sentence on how to move it back.
 
-### List format
+If there are no findings, report "consolidation check: nothing to report", skip Phase 2, and give the opening line.
 
-For every item, give:
+If there are items, first print the full evidence list as text, then get approval with `AskUserQuestion` **in this same turn**; do not defer the question to the next turn. `AskUserQuestion` is a deferred tool; load it first with `ToolSearch select:AskUserQuestion`.
 
-* **Location** — line range in `AGENTS.md`, or the file's relative path
-* **Class** — duplication / contradiction / staleness
-* **Evidence** — for a contradiction, name the rule it conflicts with; for a file, include `references in repo: N` (a number you actually got from grep, never a guess)
-* **Proposed action** — where it would be archived to
-* **Reason** — one sentence
+- Each question uses `multiSelect: true`, with separate questions for class A and class B. An option must be understandable without reading the list above:
+  - `question`: a full sentence saying what approval will do, e.g. "Approving these rule and archive items changes `AGENTS.md`; the original text is first saved verbatim to `ARCHIVE.md`. Which should I apply?"
+  - `label`: ID plus action and target, e.g. "A1 Remove lines 40–44 (duplicates line 12)", "B2 Archive docs/old-design.md".
+  - `description`: always "Before: … → After: …", one sentence each, with concrete line numbers or paths.
+  - Every question also offers "Approve none (leave as is)".
+- At most 4 questions per call and 4 options per question. When there are more items, order them by strength of evidence and ask in further rounds (second, third, …) until all have been asked within this conversation; never skip an unasked item.
+- Unselected, "Approve none", cancelled, or no answer = not approved; leave as is and do not press.
+- The ticked selection is the authorization, with IDs matching the text list; record it as "approved by the user on YYYY-MM-DD via the wrap-up menu".
+- Non-interactive runs (`claude -p`, hook-triggered, and so on) cannot show the menu: stop at the list, say that this skill requires approval before editing or removing, and give no opening line.
 
-### Then stop
+## Phase 2: apply the approved items
 
-Once the list is out, **stop and wait for my reply. Do not give the opening line for the next session in this phase.**
+1. Handle only the items ticked in the Phase 1 menu (or explicitly approved in text); unanswered, uncertain, or rejected items stay as they are. If nothing is approved, do not press; give the opening line.
+2. **Before consolidating or removing rules**: append all text to be rewritten or removed verbatim to `docs/wrap-up/ARCHIVE.md` with date, class, origin, authorization, and reason; read back to confirm it is complete, then edit `AGENTS.md`. Keep scope and exceptions; consolidation must not change a rule's meaning.
+3. **Before archiving documents**: check references and fix current entry points. Move to `docs/wrap-up/files/<original relative path>`, keeping the directory structure; use `git mv` for tracked files and a plain move for untracked ones. If the destination exists, pick a non-conflicting one without overwriting; record original path, archive path, date, and reason. External documents do not become movable or editable through this.
+4. Never archive the root `AGENTS.md`, `CLAUDE.md`, or `CURRENT_STATE.md`, and never re-archive anything under `docs/wrap-up/`. Saving a copy of the previous version is not moving a root file.
+5. On the first rule or document archive, add an archive entry point to `AGENTS.md` once; do not repeat an equivalent one. A README in the archive directory briefly explains its historical purpose and where the current source is; do not create parallel state.
+6. Read back edits and archived content, confirm unapproved items are untouched, the pointer is intact, and references work.
+7. Save the current state again under the Phase 1 snapshot rules, then update the time, relevant results, and next step in `CURRENT_STATE.md`, still using the six sections and the soft budget.
 
-**If neither class turns up anything**: say "consolidation check: nothing to report", **skip Phase 2, and give me the opening line immediately** (format at the end of Phase 2). Do not manufacture a round-trip just to complete the ritual.
+## Closing reply
 
----
+Briefly state which files were updated, whether new rules were appended, what was archived, and what remains. Give an opening line that can be pasted into the next conversation, using the absolute path of `CURRENT_STATE.md`:
 
-# Phase 2: apply what I approved, then give the opening line
-
-Run this only after I reply.
-
-1. **Act only on items I explicitly approved.** Anything I did not mention, did not answer, or was unsure about **stays exactly as it is**.
-2. **Archiving a rule**: write the passage **verbatim, word for word** into `docs/wrap-up/ARCHIVE.md` (append, with the archive date, class, and origin). **Confirm the write and read it back**, and only then remove that passage from `AGENTS.md`.
-3. **Archiving a file**: move it to `docs/wrap-up/files/<original relative path>`, **preserving the directory structure** (e.g. `docs/old-design.md` → `docs/wrap-up/files/docs/old-design.md`) so restoring it is unambiguous.
-   * Use `git mv` when the repo is a git repository, to keep the file's history.
-   * Log every move in `ARCHIVE.md`: `original path → archive path`, date, reason.
-4. **Never archive `AGENTS.md`, `CLAUDE.md`, or `CURRENT_STATE.md` themselves**, and never archive anything already under `docs/wrap-up/`. Doing so breaks the whole mechanism.
-5. **The first time an archive is created**, append one line to `AGENTS.md` (once only — never repeat it on later runs):
-   `> Archived rules and documents live in docs/wrap-up/ARCHIVE.md.`
-6. After all edits, **read back and verify** — confirm what should have moved did, and that **everything that should not have moved is still there**.
-7. Update the timestamp in `CURRENT_STATE.md` and add a line under "Completed" recording what was archived.
-8. Give me the opening line (below).
-
-**If I reply "leave it all", answer something unrelated, or approve nothing** — change nothing and go straight to the opening line. Do not press me, do not stall.
-
-### The opening line
-
-Finally, briefly tell me which files you updated, whether you added rules to `AGENTS.md`, and what was archived. Then give me the exact opening line I can paste into the next conversation. For example:
-
-> Read `/absolute/path/to/CURRENT_STATE.md` to catch up; next we're going to…
-
-Give the **absolute path** to `CURRENT_STATE.md`.
+> Read `/absolute/path/to/CURRENT_STATE.md` to catch up, then carry out the next step in the handover notes.
