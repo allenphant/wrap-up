@@ -240,7 +240,7 @@ Claude 側的限制，寫清楚：
 /wrap-up
 ```
 
-或直接說「幫我 wrap-up」「收尾一下」「做個狀態快照」。清單列出變更前後內容，接著跳出選單讓你勾選要套用的項目（可全部不核准），之後就會拿到下一個 session 的第一句話。
+或直接說「幫我 wrap-up」「收尾一下」「做個狀態快照」。清單列出變更前後內容，接著跳出選單：可一鍵全部核准、全部不核准，或逐項勾選，之後就會拿到下一個 session 的第一句話。
 
 ### 測試
 
@@ -497,7 +497,7 @@ In Claude Code or Codex:
 /wrap-up
 ```
 
-Or just say "wrap up", "close this out", "take a state snapshot". The list shows each change as before/after, then a menu lets you tick which items to apply (or none), and you get the opening line for the next session.
+Or just say "wrap up", "close this out", "take a state snapshot". The list shows each change as before/after, then a menu lets you approve all, approve none, or pick item by item, and you get the opening line for the next session.
 
 ### Tests
 

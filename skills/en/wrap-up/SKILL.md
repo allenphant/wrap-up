@@ -105,19 +105,24 @@ If there are no findings, report "consolidation check: nothing to report", skip 
 
 If there are items, first print the full evidence list as text, then get approval with `AskUserQuestion` **in this same turn**; do not defer the question to the next turn. `AskUserQuestion` is a deferred tool; load it first with `ToolSearch select:AskUserQuestion`.
 
-- Each question uses `multiSelect: true`, with separate questions for class A and class B. An option must be understandable without reading the list above:
+- **The first question is always the overall switch** (single-select, in its own call): "How should the N listed items be handled?" with three options:
+  - "Approve all": apply **every item** in the printed list (including ones not yet asked in batches) with no further questions. Its `description` lists all IDs and actions as "Before: … → After: …".
+  - "Pick item by item": continue with the per-class questions below.
+  - "Approve none": leave everything as is.
+- After "Pick item by item", each question uses `multiSelect: true`, with separate questions for class A and class B. An option must be understandable without reading the list above:
   - `question`: a full sentence saying what approval will do, e.g. "Approving these rule and archive items changes `AGENTS.md`; the original text is first saved verbatim to `ARCHIVE.md`. Which should I apply?"
   - `label`: ID plus action and target, e.g. "A1 Remove lines 40–44 (duplicates line 12)", "B2 Archive docs/old-design.md".
   - `description`: always "Before: … → After: …", one sentence each, with concrete line numbers or paths.
   - Every question also offers "Approve none (leave as is)".
 - At most 4 questions per call and 4 options per question. When there are more items, order them by strength of evidence and ask in further rounds (second, third, …) until all have been asked within this conversation; never skip an unasked item.
 - Unselected, "Approve none", cancelled, or no answer = not approved; leave as is and do not press.
-- The ticked selection is the authorization, with IDs matching the text list; record it as "approved by the user on YYYY-MM-DD via the wrap-up menu".
+- "Approve all" covers only the items printed as text before the question; anything found later needs its own approval.
+- The overall switch or the ticked selection is the authorization, with IDs matching the text list; record it as "approved by the user on YYYY-MM-DD via the wrap-up menu".
 - Non-interactive runs (`claude -p`, hook-triggered, and so on) cannot show the menu: stop at the list, say that this skill requires approval before editing or removing, and give no opening line.
 
 ## Phase 2: apply the approved items
 
-1. Handle only the items ticked in the Phase 1 menu (or explicitly approved in text); unanswered, uncertain, or rejected items stay as they are. If nothing is approved, do not press; give the opening line.
+1. Handle only the items covered by "Approve all" or ticked in the Phase 1 menu (or explicitly approved in text); unanswered, uncertain, or rejected items stay as they are. If nothing is approved, do not press; give the opening line.
 2. **Before consolidating or removing rules**: append all text to be rewritten or removed verbatim to `docs/wrap-up/ARCHIVE.md` with date, class, origin, authorization, and reason; read back to confirm it is complete, then edit `AGENTS.md`. Keep scope and exceptions; consolidation must not change a rule's meaning.
 3. **Before archiving documents**: check references and fix current entry points. Move to `docs/wrap-up/files/<original relative path>`, keeping the directory structure; use `git mv` for tracked files and a plain move for untracked ones. If the destination exists, pick a non-conflicting one without overwriting; record original path, archive path, date, and reason. External documents do not become movable or editable through this.
 4. Never archive the root `AGENTS.md`, `CLAUDE.md`, or `CURRENT_STATE.md`, and never re-archive anything under `docs/wrap-up/`. Saving a copy of the previous version is not moving a root file.
