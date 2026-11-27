@@ -17,7 +17,8 @@ while [ $# -gt 0 ]; do
     --hooks) INSTALL_CODEX_HOOK=1; INSTALL_CLAUDE_HOOK=1; shift ;;
     --codex-hook) INSTALL_CODEX_HOOK=1; shift ;;
     --claude-hook) INSTALL_CLAUDE_HOOK=1; shift ;;
-    -h|--help) echo "usage: $0 [--lang zh-TW|en] [--hooks | --codex-hook | --claude-hook]"; exit 0 ;;
+    -h|--help) echo "usage: $0 [--lang zh-TW|en] [--hooks | --codex-hook | --claude-hook]"
+      echo "hooks are optional and off by default / hook 為選用功能，預設不安裝"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -55,6 +56,9 @@ if [ "$INSTALL_CODEX_HOOK" -eq 1 ] && [ -d "${CODEX_HOME:-$HOME/.codex}" ]; then
   python3 "$REPO/hooks/install_codex_hook.py" \
     --hook "$REPO/hooks/codex-context-wrap-up.py"
 fi
+
+# 以下兩個 70% context hook 是選用功能，只在帶旗標時安裝；建議用法見 README。
+# Both 70% context hooks are optional and installed only with a flag; see README.
 
 # Claude Code 的 hook 輸入沒有 context 用量，所以同時把 statusLine 包一層 relay
 # 來記錄官方的 context_window 數字。原本的 statusLine 指令會被保留並繼續執行。

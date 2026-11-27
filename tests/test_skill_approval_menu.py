@@ -22,8 +22,9 @@ REQUIREMENTS: dict[str, list[tuple[str, list[str]]]] = {
         ("loads the deferred tool first", ["ToolSearch select:AskUserQuestion"]),
         ("asks within the same turn", ["同一輪對話內"]),
         ("batches when over the limit", ["最多 4 題", "最多 4 個選項", "分批"]),
-        ("multiSelect with an approve-none option", ["multiSelect: true", "全部不核准"]),
-        ("first question offers approve-all", ["總開關", "「全部核准」", "「逐項挑選」", "只涵蓋提問前已用文字印出的項目"]),
+        ("multiSelect with an approve-none option", ["multiSelect: true", "全部不核准", "不套用（維持原樣）"]),
+        ("first question offers approve-all", ["總開關", "「全部核准」", "「依後面各題勾選」", "只涵蓋提問前已用文字印出的項目"]),
+        ("switch and items share one call", ["總開關與分題放在同一次呼叫", "不得先單獨問總開關"]),
         ("unanswered counts as not approved", ["視為未核准"]),
         ("non-interactive fallback", ["非互動情境"]),
         ("Before/After in the list", ["變更前／變更後"]),
@@ -35,8 +36,9 @@ REQUIREMENTS: dict[str, list[tuple[str, list[str]]]] = {
         ("loads the deferred tool first", ["ToolSearch select:AskUserQuestion"]),
         ("asks within the same turn", ["in this same turn"]),
         ("batches when over the limit", ["At most 4 questions", "4 options", "further rounds"]),
-        ("multiSelect with an approve-none option", ["multiSelect: true", "Approve none"]),
-        ("first question offers approve-all", ["overall switch", "\"Approve all\"", "\"Pick item by item\"", "covers only the items printed as text"]),
+        ("multiSelect with an approve-none option", ["multiSelect: true", "Approve none", "Do not apply (leave as is)"]),
+        ("first question offers approve-all", ["overall switch", "\"Approve all\"", "\"Use the ticks below\"", "covers only the items printed as text"]),
+        ("switch and items share one call", ["in the same call", "Never ask the switch alone"]),
         ("unanswered counts as not approved", ["= not approved"]),
         ("non-interactive fallback", ["Non-interactive runs"]),
         ("Before/After in the list", ["**Before / After**"]),
@@ -47,8 +49,8 @@ REQUIREMENTS: dict[str, list[tuple[str, list[str]]]] = {
 
 # Phrases that would mean the old "stop and wait for the next message" flow is back.
 FORBIDDEN: dict[str, list[str]] = {
-    "skills/zh-TW/wrap-up/SKILL.md": ["有未核准項目時停在清單，說明本技能要求核准後才刪改，不提供下一個對話的啟動句。若全無發現"],
-    "skills/en/wrap-up/SKILL.md": ["stop and wait for my reply", "Run this only after I reply"],
+    "skills/zh-TW/wrap-up/SKILL.md": ["有未核准項目時停在清單，說明本技能要求核准後才刪改，不提供下一個對話的啟動句。若全無發現", "單獨一次呼叫"],
+    "skills/en/wrap-up/SKILL.md": ["stop and wait for my reply", "Run this only after I reply", "in its own call"],
 }
 
 

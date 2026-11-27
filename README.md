@@ -165,7 +165,7 @@ git clone https://github.com/allenphant/wrap-up.git
 cd wrap-up
 ./install.sh              # 繁體中文版（預設）
 ./install.sh --lang en    # 英文版
-./install.sh --hooks      # 另外安裝 Claude Code 與 Codex 的 70% context hook
+./install.sh --hooks      # 選用：另外安裝 70% context hook（預設不安裝）
 ```
 
 `install.sh` 會建立 symlink 指向 repo 內的 skill 目錄：
@@ -185,9 +185,13 @@ cd wrap-up
 > cp -r skills/zh-TW/wrap-up ~/.codex/skills/
 > ```
 
-### 70% context hook：自動要求 wrap-up
+### 建議用法：邊做邊寫，壓縮交給 auto compact
 
-要讓 Claude Code 與 Codex 在 context 使用量達到 70% 時自動要求執行 wrap-up，加上 `--hooks`（只裝一邊用 `--claude-hook` 或 `--codex-hook`）：
+決策確認、任務完成、踩到會再犯的坑時，當場更新 `CURRENT_STATE.md`（把這條規則寫進你的 `AGENTS.md`）；context 壓縮交給工具內建的 auto compact；`/wrap-up` 在你想整併規則與封存舊內容時手動執行。
+
+### 選用：70% context hook
+
+上面的建議用法不需要 hook。想讓 Claude Code 與 Codex 在 context 使用量達到 70% 時自動要求執行 wrap-up，加上 `--hooks`（只裝一邊用 `--claude-hook` 或 `--codex-hook`）：
 
 ```bash
 ./install.sh --hooks
@@ -422,7 +426,7 @@ git clone https://github.com/allenphant/wrap-up.git
 cd wrap-up
 ./install.sh              # Traditional Chinese (default)
 ./install.sh --lang en    # English
-./install.sh --hooks      # Also install the Claude Code and Codex 70% context hooks
+./install.sh --hooks      # Optional: also install the 70% context hooks (off by default)
 ```
 
 `install.sh` creates symlinks pointing at the skill directory inside the repo:
@@ -442,9 +446,13 @@ Both tools then share one file, and a `git pull` updates both at once — no cha
 > cp -r skills/en/wrap-up ~/.codex/skills/
 > ```
 
-### The 70% context hook: automatic wrap-up requests
+### Recommended flow: write as you go, let auto compact handle compression
 
-To have Claude Code and Codex automatically request a wrap-up when context usage reaches 70%, add `--hooks` (or `--claude-hook` / `--codex-hook` for one side only):
+Update `CURRENT_STATE.md` the moment a decision is confirmed, a task is finished or a repeatable pitfall shows up (put that rule in your `AGENTS.md`). Leave context compression to the tool's built-in auto compact, and run `/wrap-up` by hand when you want to consolidate rules and archive old content.
+
+### Optional: the 70% context hook
+
+The recommended flow above needs no hook. To have Claude Code and Codex automatically request a wrap-up when context usage reaches 70%, add `--hooks` (or `--claude-hook` / `--codex-hook` for one side only):
 
 ```bash
 ./install.sh --hooks

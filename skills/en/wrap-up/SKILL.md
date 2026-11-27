@@ -105,17 +105,19 @@ If there are no findings, report "consolidation check: nothing to report", skip 
 
 If there are items, first print the full evidence list as text, then get approval with `AskUserQuestion` **in this same turn**; do not defer the question to the next turn. `AskUserQuestion` is a deferred tool; load it first with `ToolSearch select:AskUserQuestion`.
 
-- **The first question is always the overall switch** (single-select, in its own call): "How should the N listed items be handled?" with three options:
-  - "Approve all": apply **every item** in the printed list (including ones not yet asked in batches) with no further questions. Its `description` lists all IDs and actions as "Before: … → After: …".
-  - "Pick item by item": continue with the per-class questions below.
-  - "Approve none": leave everything as is.
-- After "Pick item by item", each question uses `multiSelect: true`, with separate questions for class A and class B. An option must be understandable without reading the list above:
+- **Put the overall switch and the item questions in the same call**: one call carries several questions, question 1 is always the overall switch, and question 2 onward are the item checklists. Never ask the switch alone and wait for its answer before asking the items.
+- **Question 1 (overall switch, single-select)**: `question` asks "How should the N listed items be handled? With 'Approve all' or 'Approve none' you can skip the other questions and Submit." Three options:
+  - "Approve all": apply **every item** in the printed list (including ones that did not fit in this call), ignore ticks in the other questions, and ask nothing further. Its `description` lists all IDs and actions as "Before: … → After: …".
+  - "Use the ticks below": apply only the items ticked in the item questions.
+  - "Approve none": leave everything as is, ignore ticks in the other questions, and ask nothing further.
+- **Question 2 onward (item questions)**: each uses `multiSelect: true`, with separate questions for class A and class B. An option must be understandable without reading the list above:
   - `question`: a full sentence saying what approval will do, e.g. "Approving these rule and archive items changes `AGENTS.md`; the original text is first saved verbatim to `ARCHIVE.md`. Which should I apply?"
   - `label`: ID plus action and target, e.g. "A1 Remove lines 40–44 (duplicates line 12)", "B2 Archive docs/old-design.md".
   - `description`: always "Before: … → After: …", one sentence each, with concrete line numbers or paths.
-  - Every question also offers "Approve none (leave as is)".
-- At most 4 questions per call and 4 options per question. When there are more items, order them by strength of evidence and ask in further rounds (second, third, …) until all have been asked within this conversation; never skip an unasked item.
-- Unselected, "Approve none", cancelled, or no answer = not approved; leave as is and do not press.
+  - When a question would hold only 1 item, add a "Do not apply (leave as is)" option so it has the minimum of 2 options.
+- If question 1 is unanswered but items are ticked, the ticked items count as approved.
+- At most 4 questions per call and 4 options per question, so the first call is the switch plus up to 3 item questions. When there are more items, order them by strength of evidence; if question 1 is "Use the ticks below", or only items were ticked, ask further rounds (item questions only) until all have been asked within this conversation; never skip an unasked item.
+- Unticked, "Do not apply (leave as is)", cancelled, or no answer at all = not approved; leave as is and do not press.
 - "Approve all" covers only the items printed as text before the question; anything found later needs its own approval.
 - The overall switch or the ticked selection is the authorization, with IDs matching the text list; record it as "approved by the user on YYYY-MM-DD via the wrap-up menu".
 - Non-interactive runs (`claude -p`, hook-triggered, and so on) cannot show the menu: stop at the list, say that this skill requires approval before editing or removing, and give no opening line.
